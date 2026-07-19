@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Renomeador de Laudos</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+  :root{
+    --ink:#1a1614; --paper:#f6f4f0; --line:#d8d2c8; --line2:#e7e2d9;
+    --accent:#c8452f; --accent-soft:#f0ddd6; --ok:#2f6b46; --ok-soft:#dcebe1;
+    --warn:#9a6b1e; --warn-soft:#f3e8d0; --muted:#8a8175; --field:#fffef9;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+
+  /* header */
+  header{border-bottom:2px solid var(--ink);background:var(--paper);position:sticky;top:0;z-index:20}
+  .head-inner{display:flex;align-items:baseline;justify-content:space-between;padding:20px 24px;max-width:1180px;margin:0 auto;gap:20px;flex-wrap:wrap}
+  .brand{display:flex;align-items:baseline;gap:14px}
+  .tag{font-family:'Courier New',monospace;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);font-weight:700;border:1px solid var(--accent);padding:3px 8px;border-radius:2px}
+  h1{font-size:23px;font-weight:800;letter-spacing:-.02em;margin:0}
+  .head-meta{font-family:'Courier New',monospace;font-size:12px;color:var(--muted);letter-spacing:.04em}
+
+  /* hero drop */
+  .hero{padding:36px 0 8px}
+  .lead{font-size:15px;color:#4a443c;max-width:640px;margin:0 0 24px}
+  .lead b{color:var(--ink)}
+  .drop{
+    border:2px dashed var(--line);border-radius:8px;background:var(--field);
+    padding:44px 28px;text-align:center;cursor:pointer;transition:.15s;position:relative
+  }
+  .drop:hover,.drop.hot{border-color:var(--accent);background:#fff}
+  .drop.hot{box-shadow:inset 0 0 0 4px var(--accent-soft)}
+  .drop-ico{font-size:34px;line-height:1;margin-bottom:12px;filter:grayscale(.2)}
+  .drop h2{margin:0 0 6px;font-size:18px;font-weight:700}
+  .drop p{margin:0;color:var(--muted);font-size:13.5px}
+  .drop .or{display:inline-block;margin-top:14px;font-family:'Courier New',monospace;font-size:12px;color:var(--accent);border-bottom:1px solid var(--accent);padding-bottom:1px}
+  input[type=file]{display:none}
+
+  /* controls */
+  .bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:22px 0 8px}
+  .btn{
+    font-family:'Segoe UI',sans-serif;font-size:14px;font-weight:600;cursor:pointer;
+    border:1.5px solid var(--ink);background:var(--ink);color:var(--paper);
+    padding:10px 18px;border-radius:4px;transition:.12s;letter-spacing:.01em
+  }
+  .btn:hover{background:#000}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.ghost{background:transparent;color:var(--ink)}
+  .btn.ghost:hover{background:var(--line2)}
+  .btn.accent{background:var(--accent);border-color:var(--accent)}
+  .btn.accent:hover{background:#b23a26}
+  .count{font-family:'Courier New',monospace;font-size:13px;color:var(--muted);margin-left:auto}
+
+  /* progress */
+  .prog{margin:14px 0;display:none}
+  .prog.show{display:block}
+  .prog-track{height:6px;background:var(--line2);border-radius:3px;overflow:hidden}
+  .prog-fill{height:100%;background:var(--accent);width:0;transition:width .25s}
+  .prog-txt{font-family:'Courier New',monospace;font-size:12px;color:var(--muted);margin-top:7px}
+
+  /* table */
+  .tbl-wrap{margin:18px 0 60px;overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--field)}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:860px}
+  thead th{
+    background:var(--ink);color:var(--paper);text-align:left;padding:11px 12px;
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;position:sticky;top:0
+  }
+  tbody td{padding:7px 10px;border-bottom:1px solid var(--line2);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fffdf6}
+  td.orig{font-family:'Courier New',monospace;font-size:11.5px;color:var(--muted);max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  td.fab{font-size:12px}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.03em}
+  .pill.fab{background:var(--line2);color:#5c554a}
+  .cell-in{width:100%;border:1px solid transparent;background:transparent;font:inherit;color:inherit;padding:5px 7px;border-radius:4px;transition:.1s}
+  .cell-in:hover{border-color:var(--line)}
+  .cell-in:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-soft)}
+  .cell-in.miss{background:var(--warn-soft)}
+  .st{font-size:16px;text-align:center;width:34px}
+  .newname{font-family:'Courier New',monospace;font-size:11.5px;color:#3a352e;max-width:230px;word-break:break-all}
+  .row-skip td{opacity:.5}
+  .badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:3px}
+  .badge.ok{background:var(--ok-soft);color:var(--ok)}
+  .badge.rev{background:var(--warn-soft);color:var(--warn)}
+  .badge.skip{background:var(--line2);color:var(--muted)}
+
+  /* legend / empty */
+  .empty{padding:50px 20px;text-align:center;color:var(--muted);font-size:14px}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:#5c554a;margin:6px 2px 0}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+
+  footer{border-top:1px solid var(--line);padding:22px 0;font-size:12px;color:var(--muted);text-align:center}
+  footer code{font-family:'Courier New',monospace;background:var(--line2);padding:1px 5px;border-radius:3px;color:#5c554a}
+  .note{background:var(--warn-soft);border-left:3px solid var(--warn);padding:12px 16px;border-radius:0 4px 4px 0;font-size:13px;color:#6e5320;margin:14px 0}
+
+  /* guia de passos */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:22px 0 6px}
+  .step{background:var(--field);border:1px solid var(--line);border-radius:8px;padding:16px 16px 15px;position:relative}
+  .step .n{font-family:'Courier New',monospace;font-weight:700;font-size:12px;color:var(--paper);background:var(--accent);width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:9px}
+  .step h3{margin:0 0 4px;font-size:14.5px;font-weight:700}
+  .step p{margin:0;font-size:13px;color:#5c554a;line-height:1.45}
+  .qty{display:flex;align-items:center;gap:12px;background:var(--accent-soft);border:1px solid #e6c7bd;border-radius:8px;padding:13px 16px;margin:14px 0 4px;font-size:13.5px;color:#7a3020}
+  .qty b{color:var(--accent)}
+  .qty .big{font-family:'Courier New',monospace;font-weight:700;font-size:22px;color:var(--accent);white-space:nowrap;line-height:1}
+  @media(max-width:640px){.steps{grid-template-columns:1fr}.qty{flex-direction:column;align-items:flex-start;gap:6px}}
+  @media(max-width:640px){h1{font-size:19px}.head-meta{display:none}.lead{font-size:14px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-inner">
+    <div class="brand">
+      <span class="tag">Laudos</span>
+      <h1>Renomeador de laudos de químico</h1>
+    </div>
+    <div class="head-meta" id="clock">pronto</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="lead">Arraste os PDFs digitalizados — ou a <b>pasta ZIP</b> com eles dentro. O sistema lê cada laudo, identifica o <b>fabricante</b>, extrai <b>químico</b>, <b>lote</b> e <b>ano de fabricação</b>, e gera os arquivos renomeados no padrão <b>QUÍMICO_LOTE_ANO</b>. Tudo roda no seu computador — nenhum arquivo é enviado para fora.</p>
+
+    <div class="steps">
+      <div class="step"><div class="n">1</div><h3>Solte o ZIP</h3><p>Arraste a pasta zipada com os laudos, do jeito que você recebe. Não precisa descompactar.</p></div>
+      <div class="step"><div class="n">2</div><h3>Confira a tabela</h3><p>O sistema preenche químico, lote e ano. O que ficar <b>amarelo</b> está faltando — é só clicar e digitar.</p></div>
+      <div class="step"><div class="n">3</div><h3>Baixe o ZIP</h3><p>Clique em <b>Baixar ZIP renomeado</b>. Vem tudo pronto, mais uma planilha de conferência.</p></div>
+    </div>
+
+    <div class="qty">
+      <span class="big">20–40</span>
+      <span>laudos por vez é o ideal. Menos espera, revisão mais fácil e nada se perde se o computador reiniciar. Pode mandar mais, mas aí a aba fica trabalhando por vários minutos. <b>Dica:</b> separar por fabricante deixa a conferência ainda mais rápida.</span>
+    </div>
+
+    <div class="drop" id="drop">
+      <div class="drop-ico">▤</div>
+      <h2>Solte os laudos ou a pasta ZIP aqui</h2>
+      <p>PDFs digitalizados ou o ZIP com eles dentro · reconhece 3M, Ecolab, HACH, White Martins, Brenntag, KIC Krones, Free Land e Markem-Imaje</p>
+      <span class="or">ou clique para escolher os arquivos</span>
+      <input type="file" id="file" accept="application/pdf,.pdf,application/zip,.zip" multiple>
+    </div>
+
+    <div class="prog" id="prog">
+      <div class="prog-track"><div class="prog-fill" id="fill"></div></div>
+      <div class="prog-txt" id="ptxt">—</div>
+    </div>
+
+    <div class="bar" id="bar" style="display:none">
+      <button class="btn accent" id="dl" disabled>Baixar ZIP renomeado</button>
+      <button class="btn ghost" id="csv" disabled>Exportar planilha (CSV)</button>
+      <button class="btn ghost" id="clear">Limpar</button>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="legend" id="legend" style="display:none">
+      <span><i class="dot" style="background:var(--ok)"></i> Pronto</span>
+      <span><i class="dot" style="background:var(--warn)"></i> Revisar — falta um campo (edite na tabela)</span>
+      <span><i class="dot" style="background:var(--muted)"></i> Não é laudo (lista de embarque)</span>
+    </div>
+  </section>
+
+  <div class="tbl-wrap" id="tblwrap" style="display:none">
+    <table>
+      <thead><tr>
+        <th class="st">✓</th>
+        <th>Arquivo original</th>
+        <th>Fabricante</th>
+        <th>Químico</th>
+        <th>Lote</th>
+        <th>Ano</th>
+        <th>Novo nome</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="empty" id="empty" style="display:none">Nenhum laudo carregado ainda.</div>
+</main>
+
+<footer class="wrap">
+  Processamento local no navegador · OCR Tesseract (por+spa+eng) · padrão <code>QUÍMICO_LOTE_ANO.pdf</code>
+</footer>
+
+<script type="module">
+import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+
+const $ = s => document.querySelector(s);
+const rowsEl=$('#rows'), tblwrap=$('#tblwrap'), emptyEl=$('#empty');
+const drop=$('#drop'), fileIn=$('#file'), prog=$('#prog'), fill=$('#fill'), ptxt=$('#ptxt');
+const bar=$('#bar'), legend=$('#legend'), dlBtn=$('#dl'), csvBtn=$('#csv'), clearBtn=$('#clear'), countEl=$('#count');
+
+let items=[];            // {file, orig, fab, quimico, lote, ano, status}
+let worker=null;
+
+// ---------- util ----------
+const MESES={jan:'01',fev:'02',mar:'03',abr:'04',mai:'05',jun:'06',jul:'07',ago:'08',set:'09',out:'10',nov:'11',dez:'12',feb:'02',apr:'04',may:'05',aug:'08',sep:'09',oct:'10',dec:'12'};
+
+function yearFrom(s){
+  if(!s) return null; s=String(s);
+  // dd/mm/aaaa · dd.mm.aaaa · dd-mm-aaaa
+  let m=s.match(/\d{1,2}[/.\-]\d{1,2}[/.\-](\d{4})/); if(m) return m[1];
+  // dd-MMM-aaaa · dd/mmm/aaaa (mês por extenso)
+  m=s.match(/\d{1,2}[/.\- ][A-Za-zçÇ]{3,9}[/.\- ](\d{4})/); if(m) return m[1];
+  // mm/aaaa
+  m=s.match(/\d{1,2}[/.\-](\d{4})/); if(m) return m[1];
+  // qualquer ano 20xx
+  m=s.match(/(20\d{2})/); if(m) return m[1];
+  return null;
+}
+function clean(s){ if(!s)return s; return s.replace(/^[\s:|\[\].\-_¡'"~]+/,'').replace(/[\s:|\[\].\-_]+$/,'').replace(/\s+/g,' ').trim(); }
+function sanit(s){
+  if(!s) return 'SEM_DADO';
+  return s.replace(/[<>:"/\\|?*]/g,'').replace(/['.]/g,'').replace(/%/g,'pct').replace(/,/g,'')
+          .trim().replace(/\s+/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'');
+}
+
+// ---------- classificação ----------
+function classify(t){
+  if(/Chargenzertifikat/i.test(t)) return 'HachLange';
+  if(/HACH/i.test(t)) return 'HACH';
+  if(/Brenntag/i.test(t)) return 'Brenntag';
+  if(/White Martins|Linde/i.test(t)) return 'White Martins';
+  if(/markem|Dover/i.test(t)) return 'Markem-Imaje';
+  if(/KRONES/i.test(t)) return 'KIC Krones';
+  if(/Tetra ?Pak|LISTA DE EMBARQUE/i.test(t)) return 'Tetra Pak';
+  if(/FREE ?LAND/i.test(t)) return 'Free Land';
+  if(/ECOLAB|SYNERGEX/i.test(t)) return 'Ecolab';
+  if(/3M|Produto 3M|Certificado de Conformidade|Certificado de An.lise/i.test(t)) return '3M';
+  return 'Desconhecido';
+}
+
+// ---------- parsers ----------
+function p3M(t){
+  let q=null,l=null,a=null,m;
+  m=t.match(/Descri.{0,4}o do Produto\s*3M\s*[:\]|]*\s*(.+)/i);
+  if(m){ let r=clean(m[1]); r=r.replace(/^[¡'"~|Jj\[\]\-\s]+/,'').replace(/\s+[A-Za-z]{1,2}\s*$/,''); q=clean(r); }
+  m=t.match(/Lote\s*[3S]M[^\n0-9]*(\d{6,})/i); if(m) l=m[1];
+  m=t.match(/Data de Fabrica.{0,4}o[^\n]*/i);
+  if(m){ let dm=m[0].match(/(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})/); if(dm)a=dm[3];
+    else{ dm=m[0].match(/\b(\d{2})(\d{2})(20\d{2})\b/); a=dm?dm[3]:yearFrom(m[0]); } }
+  return [q,l,a];
+}
+function pEcolab(t){
+  let q=null,l=null,a=null,m; const L=t.split('\n').map(x=>x.trim());
+  for(const ln of L){ if(!ln)continue; if(/^ECOLAB$/i.test(ln))continue;
+    if(/ecolab|certificad|qu.mica|lote|data|validade|aprovado/i.test(ln))continue; q=clean(ln); break; }
+  m=t.match(/Lote\s*[:\]|—]*\s*([0-9A-Za-z\-]{3,})/i); if(m) l=m[1];
+  m=t.match(/Data de fabrica.{0,3}o[^\n]*/i); if(m) a=yearFrom(m[0]);
+  return [q,l,a];
+}
+function pFree(t){
+  let q=null,l=null,a=null,m;
+  m=t.match(/Nome do Produto\s*[:\]|]*\s*\|?\s*([A-Za-z0-9 ]+?)\s*\|/i); if(m) q=clean(m[1]);
+  m=t.match(/Lote\s*[:\]|]*\s*\|?\s*([0-9A-Za-z]{3,})/i); if(m) l=m[1];
+  m=t.match(/Data de Fabrica.{0,3}o\s*[:\]|]*\s*\|?\s*([0-9]{1,2}[/.\-][0-9]{1,2}[/.\-][0-9]{4})/i); if(m) a=yearFrom(m[1]);
+  return [q,l,a];
+}
+function pHach(t){
+  let q=null,l=null,a=null,m;
+  m=t.match(/PRODUCT\s*[:\]|]*\s*(.+)/); if(m) q=clean(m[1]);
+  m=t.match(/LOT\s*NUMBER\s*[:;\]|]*\s*([0-9A-Za-z]{3,})/i); if(m) l=m[1];
+  m=t.match(/MANUFACTURE\s*DATE\s*[:\]|]*\s*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})/i); if(m) a=yearFrom(m[1]);
+  return [q,l,a];
+}
+function pHachLange(t){
+  let q=null,l=null,a=null,m;
+  const prod=t.match(/Produkt\s*[:\]|]*\s*\n*\s*([A-Za-z0-9\-]+)/i);
+  const bez=t.match(/Bezeichnung\s*[:\]|]*\s*\n*\s*([A-Za-z0-9\-]+)/i);
+  if(prod&&bez) q=`${bez[1]} ${prod[1]}`; else if(prod) q=prod[1];
+  m=t.match(/Charge\s*[:\]|]*\s*\n*\s*(\d{3,})/i); if(m) l=m[1];
+  m=t.match(/Herstelldatum\s*[:\]|]*[^\d]*([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})/i);
+  if(!m) m=t.match(/([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})\s*\(TT\.MM/);
+  if(m) a=yearFrom(m[1]);
+  return [q,l,a];
+}
+function pBrenntag(t){
+  let q=null,l=null,a=null,m;
+  m=t.match(/Descri.{0,3}o\s*[:\]|]*\s*(.+)/i); if(m) q=clean(m[1].split(/Lote/i)[0]);
+  m=t.match(/\bLote\s*[:\]|—\s]*\s*([0-9]{4,})/i); if(m) l=m[1];
+  m=t.match(/Data de Fabrica.{0,3}o[^\n]*/i);
+  if(m){ let dm=m[0].match(/([0-9]{1,2}-[A-Za-z]{3}-[0-9]{4})/); a = dm?yearFrom(dm[1]):yearFrom(m[0]); }
+  return [q,l,a];
+}
+function pWM(t){
+  let q=null,l=null,a=null,m;
+  m=t.match(/Descri.{0,3}o do Produto\s*[:\]|]*\s*(.+)/i);
+  if(!m) m=t.match(/Produto\s*[:\]|]*\s*\n*\s*(Nitrog.nio[^\n]*)/i);
+  if(m) q=clean(m[1].split(/pata|data|lote/i)[0]);
+  if(q && /nitrog/i.test(q)) q = /medicinal/i.test(q) ? 'Nitrogenio Liquido Medicinal' : 'Nitrogenio Liquido';
+  m=t.match(/Lote de controle\s*[:\]|]*\s*([0-9]{4,})/i);
+  if(!m) m=t.match(/Lote de contin.{0,3}ncia\s*[:\]|]*\s*([0-9]{4,})/i);
+  if(m) l=m[1];
+  // "Data" às vezes vira "pata"/"data"; pode estar na mesma linha do lote
+  m=t.match(/[pPdD]ata de fabrica.{0,3}o\s*[:\]|]*\s*([0-9]{1,2}[\.\/][0-9]{1,2}[\.\/][0-9]{4})/i);
+  if(!m) m=t.match(/fabrica.{0,3}o[:\s]*([0-9]{1,2}[\.\/][0-9]{1,2}[\.\/][0-9]{4})/i);
+  if(m) a=yearFrom(m[1]);
+  return [q,l,a];
+}
+function pMarkem(t){
+  let q=null,l=null,a=null,m;
+  m=t.match(/Nombre\s*[:\]|]*\s*([A-Za-z0-9\-]+)/i); if(m) q=clean(m[1]);
+  if(!q){ m=t.match(/Aditivo\s+([A-Za-z0-9]+)/i); if(m) q='Aditivo '+m[1]; }
+  m=t.match(/Lote\s*[:\]|]*\s*([0-9A-Za-z]{4,})/i); if(m) l=m[1];
+  m=t.match(/Envase\s*[:\]|]*\s*([0-9]{1,2}\/[0-9]{4})/i); if(m) a=yearFrom(m[1]);
+  if(!a){ m=t.match(/Data:\s*([0-9]{1,2}\.[0-9]{1,2}\.[0-9]{4})/i); if(m) a=yearFrom(m[1]); }
+  return [q,l,a];
+}
+function pKrones(t){
+  // KIC Krones: valores ficam em caixas pretas — OCR costuma falhar.
+  // Só aceita se vier num formato plausível; senão deixa p/ revisão manual.
+  let q=null,l=null,a=null,m;
+  m=t.match(/Product\s*[:\]|]*\s*([A-Za-z][A-Za-z0-9 '\-]{2,30})/i);
+  if(m && !/services|described|suitable|date/i.test(m[1])) q=clean(m[1]);
+  m=t.match(/Batch\s*No\.?\s*[:\]|]*\s*([0-9A-Za-z]{4,})/i); if(m) l=m[1];
+  m=t.match(/Production\s*date\s*[:\]|]*\s*([0-9]{1,2}\/[0-9]{4})/i); if(m) a=yearFrom(m[1]);
+  return [q,l,a];
+}
+const PARSERS={'3M':p3M,'Ecolab':pEcolab,'Free Land':pFree,'HACH':pHach,'HachLange':pHachLange,'Brenntag':pBrenntag,'White Martins':pWM,'Markem-Imaje':pMarkem,'KIC Krones':pKrones};
+
+// ---------- pipeline ----------
+async function pdfToImage(file){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const page=await pdf.getPage(1);
+  const vp=page.getViewport({scale:2.4});
+  const cv=document.createElement('canvas');
+  cv.width=vp.width; cv.height=vp.height;
+  await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+  return cv;
+}
+
+function extract(text){
+  const fab=classify(text);
+  if(fab==='Tetra Pak') return {fab, quimico:'', lote:'', ano:'', status:'skip'};
+  let q=null,l=null,a=null;
+  if(PARSERS[fab]){ [q,l,a]=PARSERS[fab](text); }
+  q=q||''; l=l||''; a=a||'';
+  const status=(q&&l&&a)?'ok':'rev';
+  return {fab, quimico:q, lote:l, ano:a, status};
+}
+
+function makeName(it, taken){
+  if(it.status==='skip') return `NAO-LAUDO_${it.orig.replace(/\.pdf$/i,'')}.pdf`;
+  const base=`${sanit(it.quimico||'SEMNOME')}_${sanit(it.lote||'SEMLOTE')}_${it.ano||'SEMANO'}`;
+  const pre=(it.status==='rev')?'REVISAR_':'';
+  let name=pre+base, n=1;
+  while(taken.has(name)){ n++; name=`${pre}${base}_${n}`; }
+  taken.add(name);
+  return name+'.pdf';
+}
+
+function render(){
+  if(!items.length){ tblwrap.style.display='none'; emptyEl.style.display='none'; bar.style.display='none'; legend.style.display='none'; return; }
+  tblwrap.style.display='block'; bar.style.display='flex'; legend.style.display='flex'; emptyEl.style.display='none';
+  const taken=new Set();
+  rowsEl.innerHTML='';
+  let ok=0,rev=0,skip=0;
+  items.forEach((it,i)=>{
+    it.newname=makeName(it,taken);
+    if(it.status==='ok')ok++; else if(it.status==='rev')rev++; else skip++;
+    const tr=document.createElement('tr');
+    if(it.status==='skip') tr.className='row-skip';
+    const stIco=it.status==='ok'?'●':it.status==='rev'?'▲':'—';
+    const stCol=it.status==='ok'?'var(--ok)':it.status==='rev'?'var(--warn)':'var(--muted)';
+    const badge=it.status==='ok'?'<span class="badge ok">pronto</span>':it.status==='rev'?'<span class="badge rev">revisar</span>':'<span class="badge skip">não-laudo</span>';
+    const miss=f=> (it.status==='rev'&&!it[f])?'miss':'';
+    tr.innerHTML=`
+      <td class="st" style="color:${stCol}">${stIco}</td>
+      <td class="orig" title="${it.orig}">${it.orig}</td>
+      <td class="fab"><span class="pill fab">${it.fab}</span></td>
+      <td>${it.status==='skip'?'—':`<input class="cell-in ${miss('quimico')}" data-i="${i}" data-f="quimico" value="${(it.quimico||'').replace(/"/g,'&quot;')}" placeholder="químico">`}</td>
+      <td>${it.status==='skip'?'—':`<input class="cell-in ${miss('lote')}" data-i="${i}" data-f="lote" value="${(it.lote||'').replace(/"/g,'&quot;')}" placeholder="lote" style="width:120px">`}</td>
+      <td>${it.status==='skip'?'—':`<input class="cell-in ${miss('ano')}" data-i="${i}" data-f="ano" value="${it.ano||''}" placeholder="ano" style="width:64px">`}</td>
+      <td class="newname">${it.newname}</td>
+      <td>${badge}</td>`;
+    rowsEl.appendChild(tr);
+  });
+  countEl.textContent=`${items.length} arquivos · ${ok} prontos · ${rev} a revisar · ${skip} não-laudo`;
+  dlBtn.disabled=false; csvBtn.disabled=false;
+}
+
+// edição inline
+rowsEl.addEventListener('input',e=>{
+  const inp=e.target.closest('.cell-in'); if(!inp)return;
+  const i=+inp.dataset.i, f=inp.dataset.f;
+  items[i][f]=inp.value.trim();
+  items[i].status=(items[i].quimico&&items[i].lote&&items[i].ano)?'ok':'rev';
+  // re-render leve: recomputa nomes/badges
+  clearTimeout(window._rt); window._rt=setTimeout(render,300);
+});
+
+// extrai PDFs de arquivos soltos e de dentro de ZIPs
+async function collectPdfs(files){
+  const out=[];
+  for(const f of files){
+    if(/\.pdf$/i.test(f.name)){ out.push(f); continue; }
+    if(/\.zip$/i.test(f.name)){
+      try{
+        const zip=await JSZip.loadAsync(await f.arrayBuffer());
+        const entries=Object.values(zip.files).filter(e=>!e.dir && /\.pdf$/i.test(e.name));
+        for(const e of entries){
+          const blob=await e.async('blob');
+          // nome só do arquivo, sem caminho de pasta interno
+          const nm=e.name.split('/').pop();
+          out.push(new File([blob], nm, {type:'application/pdf'}));
+        }
+      }catch(err){ /* zip inválido: ignora */ }
+    }
+  }
+  return out;
+}
+
+async function process(files){
+  if(typeof Tesseract==='undefined'||typeof JSZip==='undefined'){
+    alert('As bibliotecas não carregaram. Conecte à internet na primeira vez que abrir o site (depois o navegador guarda em cache).');
+    return;
+  }
+  prog.classList.add('show'); dlBtn.disabled=true; csvBtn.disabled=true;
+  ptxt.textContent='Abrindo arquivos…'; fill.style.width='2%';
+  const pdfs=await collectPdfs([...files]);
+  if(!pdfs.length){ prog.classList.remove('show'); alert('Nenhum PDF encontrado. Arraste os laudos em PDF ou a pasta ZIP com eles dentro.'); return; }
+
+  if(!worker){
+    worker=await Tesseract.createWorker(['por','spa','eng']);
+  }
+  items=[];
+  for(let i=0;i<pdfs.length;i++){
+    const f=pdfs[i];
+    ptxt.textContent=`Lendo ${i+1}/${pdfs.length} · ${f.name}`;
+    fill.style.width=`${Math.round((i/pdfs.length)*100)}%`;
+    try{
+      const cv=await pdfToImage(f);
+      const {data:{text}}=await worker.recognize(cv);
+      const ex=extract(text);
+      items.push({file:f, orig:f.name, ...ex});
+    }catch(err){
+      items.push({file:f, orig:f.name, fab:'Erro', quimico:'', lote:'', ano:'', status:'rev'});
+    }
+    render();
+  }
+  fill.style.width='100%'; ptxt.textContent=`Concluído · ${pdfs.length} laudos processados`;
+  setTimeout(()=>prog.classList.remove('show'),1500);
+}
+
+// ---------- download ----------
+dlBtn.addEventListener('click',async()=>{
+  const zip=new JSZip(), taken=new Set();
+  const revFolder=zip.folder('REVISAR'), skipFolder=zip.folder('NAO_LAUDO_listas_embarque');
+  for(const it of items){
+    const name=makeName(it,taken);
+    const buf=await it.file.arrayBuffer();
+    if(it.status==='skip') skipFolder.file(name,buf);
+    else if(it.status==='rev') revFolder.file(name,buf);
+    else zip.file(name,buf);
+  }
+  // csv
+  zip.file('00_RESUMO.csv',toCSV());
+  const blob=await zip.generateAsync({type:'blob'});
+  saveBlob(blob,'laudos_renomeados.zip');
+});
+csvBtn.addEventListener('click',()=>saveBlob(new Blob(['\ufeff'+toCSV()],{type:'text/csv'}),'laudos_resumo.csv'));
+
+function toCSV(){
+  const esc=s=>`"${String(s??'').replace(/"/g,'""')}"`;
+  const head=['Arquivo original','Fabricante','Químico','Lote','Ano','Novo nome','Status'];
+  const taken=new Set();
+  const lines=items.map(it=>{
+    const nn=makeName(it,taken);
+    const st=it.status==='ok'?'Pronto':it.status==='rev'?'Revisar':'Não-laudo';
+    return [it.orig,it.fab,it.quimico,it.lote,it.ano,nn,st].map(esc).join(',');
+  });
+  return [head.map(esc).join(','),...lines].join('\r\n');
+}
+function saveBlob(blob,fname){
+  const u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download=fname;a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
+}
+
+// ---------- events ----------
+drop.addEventListener('click',()=>fileIn.click());
+fileIn.addEventListener('change',e=>process(e.target.files));
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot')}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot')}));
+drop.addEventListener('drop',e=>process(e.dataTransfer.files));
+clearBtn.addEventListener('click',()=>{items=[];render();fileIn.value='';});
+</script>
+</body>
+</html>
